@@ -353,11 +353,19 @@ export function apply(ctx, config = {}) {
       description: extra.description ?? existing?.description ?? '',
       createdAt: existing?.createdAt ?? nowISO(),
       updatedAt: nowISO(),
+      newAt: existing?.newAt ?? null,
+      seenAt: existing?.seenAt ?? null,
+      fileCreatedAt: existing?.fileCreatedAt ?? (() => {
+        const ms = Number(stats.birthtimeMs) > 0 ? Number(stats.birthtimeMs) : Number(stats.mtimeMs)
+        return Number.isFinite(ms) && ms > 0 ? new Date(ms).toISOString() : null
+      })(),
       lastRun: existing?.lastRun ?? null,
       runCount: existing?.runCount ?? 0,
       docHint: 'generated',
       docCustomized: existing?.docCustomized ?? false,
     }
+    if (!existing && extra.fresh !== false) entry.newAt = entry.createdAt
+    fileTimeCache.delete(filePath)
     entries.set(id, entry)
 
     const docFileExists = await stat(docPath).then(() => true).catch(() => false)
@@ -403,6 +411,47 @@ export function apply(ctx, config = {}) {
 
     await saveIndex()
     return entry
+  }
+
+  // 脚本文件本身的创建时间（Windows 上取 birthtime，取不到回落 mtime）
+  const fileTimeCache = new Map()
+  async function fileCreatedAtOf(entry) {
+    if (entry.fileCreatedAt) return entry.fileCreatedAt
+    const key = entry.filePath
+    if (!key) return null
+    const cached = fileTimeCache.get(key)
+    if (cached) return cached
+    try {
+      const stats = await stat(key)
+      const ms = Number(stats.birthtimeMs) > 0 ? Number(stats.birthtimeMs) : Number(stats.mtimeMs)
+      const iso = Number.isFinite(ms) && ms > 0 ? new Date(ms).toISOString() : null
+      if (iso) fileTimeCache.set(key, iso)
+      return iso
+    } catch {
+      return null
+    }
+  }
+
+  // 老条目没有固化创建时间：优先取源文件的 birthtime，源文件没了就用归档副本
+  async function backfillFileTimes() {
+    let changed = 0
+    for (const entry of entries.values()) {
+      if (entry.fileCreatedAt) continue
+      let target = entry.filePath
+      if (entry.srcPath && await stat(entry.srcPath).then((st) => st.isFile()).catch(() => false)) target = entry.srcPath
+      try {
+        const stats = await stat(target)
+        const ms = Number(stats.birthtimeMs) > 0 ? Number(stats.birthtimeMs) : Number(stats.mtimeMs)
+        if (!Number.isFinite(ms) || ms <= 0) continue
+        entry.fileCreatedAt = new Date(ms).toISOString()
+        changed += 1
+      } catch {}
+    }
+    if (changed > 0) {
+      await saveIndex()
+      log('info', `backfilled fileCreatedAt for ${changed} entries`)
+    }
+    return changed
   }
 
   function statusSnapshot() {
@@ -1284,6 +1333,18 @@ export function apply(ctx, config = {}) {
     return entry
   }
 
+  // 点击认领：记录首次点击时间，面板据此在 24 小时后摘掉 NEW 徽标
+  async function markSeen(id) {
+    await loadIndex()
+    const entry = entries.get(String(id ?? ''))
+    if (!entry) throw new Error(`unknown script id: ${id}`)
+    if (!entry.seenAt) {
+      entry.seenAt = nowISO()
+      await saveIndex()
+    }
+    return entry
+  }
+
   async function renameEntry(id, rawTitle) {
     await loadIndex()
     const entry = entries.get(id)
@@ -1450,6 +1511,7 @@ export function apply(ctx, config = {}) {
           sessionId: target.sessionId ?? '',
           description: options.description ?? '',
           title: target.title ?? undefined,
+          fresh: false,
         })
         results.push({
           key,
@@ -2548,11 +2610,12 @@ export function apply(ctx, config = {}) {
         }
         const list = await Promise.all([...entries.values()].map(async (entry) => {
           const status = snapshot.get(entry.id) ?? withStatus(entry)
-          const [docTitle, quality, oneOff, blurb] = await Promise.all([
+          const [docTitle, quality, oneOff, blurb, fileCreatedAt] = await Promise.all([
             entry.title ? Promise.resolve(entry.title) : timeIt('docTitle', () => readDocTitle(entry.docPath)),
             timeIt('quality', () => docQualityOf(entry)),
             timeIt('oneOff', () => detectOneOff(entry)),
             timeIt('blurb', () => scriptBlurb(entry)),
+            fileCreatedAtOf(entry),
           ])
           return {
             ...status,
@@ -2564,6 +2627,10 @@ export function apply(ctx, config = {}) {
             needDoc: quality.docState !== 'ok',
             importance: entry.importance ?? null,
             importanceReason: entry.importanceReason ?? null,
+            createdAt: entry.createdAt ?? null,
+            fileCreatedAt,
+            newAt: entry.newAt ?? null,
+            seenAt: entry.seenAt ?? null,
             ...oneOff,
             ...blurb,
           }
@@ -2727,6 +2794,21 @@ export function apply(ctx, config = {}) {
     },
     {
       kind: 'exact',
+      path: '/api/dsh-script-hub/seen',
+      handler: async (req, res) => {
+        if (!isLoopback(req) || !isSameSite(req)) return writeJson(res, 403, { error: 'loopback same-site only' })
+        if (req.method !== 'POST') return writeJson(res, 405, { error: 'POST only' })
+        try {
+          const body = await readBody(req)
+          const entry = await markSeen(String(body.id ?? ''))
+          writeJson(res, 200, { ok: true, id: entry.id, seenAt: entry.seenAt ?? null })
+        } catch (error) {
+          writeJson(res, 400, { ok: false, error: error instanceof Error ? error.message : String(error) })
+        }
+      },
+    },
+    {
+      kind: 'exact',
       path: '/api/dsh-script-hub/rename',
       handler: async (req, res) => {
         if (!isLoopback(req) || !isSameSite(req)) return writeJson(res, 403, { error: 'loopback same-site only' })
@@ -2859,6 +2941,7 @@ export function apply(ctx, config = {}) {
               await Promise.all([readDocTitle(entry.docPath), docQualityOf(entry), detectOneOff(entry), scriptBlurb(entry)])
             }))
             log('info', `warmed entry caches in ${Date.now() - started}ms (${entries.size} entries)`)
+            await backfillFileTimes()
             // 上次没归档成功的插件会话，这里补一次（最多 10 条，失败就留着原因待下次）
             const pendingArchive = generatedSessions.filter((item) => item.sessionId && item.archived !== true).slice(-10)
             for (const item of pendingArchive) {

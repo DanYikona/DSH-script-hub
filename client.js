@@ -23,6 +23,7 @@ window.__ModuleLoader__.load({
       remove: 'api/dsh-script-hub/delete',
       rename: 'api/dsh-script-hub/rename',
       hide: 'api/dsh-script-hub/hide',
+      seen: 'api/dsh-script-hub/seen',
       importScan: 'api/dsh-script-hub/import-scan',
       importRun: 'api/dsh-script-hub/import-run',
       importanceQueue: 'api/dsh-script-hub/importance-queue',
@@ -386,6 +387,7 @@ window.__ModuleLoader__.load({
       const [bulkMsg, setBulkMsg] = React.useState('')
       const [bulkConfirmDel, setBulkConfirmDel] = React.useState(false)
       const [sortBy, setSortBy] = React.useState('default')
+      const [createdWithin, setCreatedWithin] = React.useState('')
       const [docFilter, setDocFilter] = React.useState('')
       const [showGenerated, setShowGenerated] = React.useState(false)
       const [nameMsg, setNameMsg] = React.useState('')
@@ -459,6 +461,14 @@ window.__ModuleLoader__.load({
       })()
       const sameGroups = sameInfo.primary
 
+      // NEW：会话新录入的脚本，点击后 24 小时内仍是 NEW，之后自动消失
+      const isNewScript = (entry) => {
+        if (!entry.newAt) return false
+        if (!entry.seenAt) return true
+        const seen = Date.parse(entry.seenAt)
+        return Number.isFinite(seen) ? Date.now() - seen < 24 * 3600 * 1000 : true
+      }
+
       const visible = entries.filter((entry) => {
         if (collapseSame && sameInfo.dupBase.size > 0) {
           const base = String(entry.name || '').replace(/\.[^.]+$/, '').toLowerCase()
@@ -477,6 +487,11 @@ window.__ModuleLoader__.load({
         if (hideBackup && entry.backup) return false
         if (hideStale && entry.stale) return false
         if (hideHidden && entry.hidden) return false
+        if (createdWithin !== '') {
+          const stamp = Date.parse(entry.fileCreatedAt || entry.createdAt || '')
+          const hours = createdWithin === '1d' ? 24 : createdWithin === '7d' ? 24 * 7 : 24 * 30
+          if (!Number.isFinite(stamp) || Date.now() - stamp > hours * 3600 * 1000) return false
+        }
         if (query.trim() !== '') {
           const needle = query.trim().toLowerCase()
           const haystack = `${entry.title || ''} ${entry.name} ${entry.category} ${entry.project} ${entry.session} ${entry.description} ${entry.srcPath}`.toLowerCase()
@@ -523,6 +538,7 @@ window.__ModuleLoader__.load({
       const selectEntry = React.useCallback(
         (id) => {
           setSelected(id)
+          void call(API.seen, { method: 'POST', body: { id } }).catch(() => {})
           setDocText('')
           setLogText('')
           if (tab === 'doc') void loadDoc(id)
@@ -817,6 +833,12 @@ window.__ModuleLoader__.load({
           list.sort((a, b) => String(b.lastRun?.startedAt ?? '').localeCompare(String(a.lastRun?.startedAt ?? '')))
         } else if (sortBy === 'created') {
           list.sort((a, b) => String(b.createdAt ?? '').localeCompare(String(a.createdAt ?? '')))
+        } else if (sortBy === 'fileCreated') {
+          const stamp = (item) => Date.parse(item.fileCreatedAt || item.createdAt || '') || 0
+          list.sort((a, b) => stamp(b) - stamp(a))
+        } else if (sortBy === 'fileCreatedAsc') {
+          const stamp = (item) => Date.parse(item.fileCreatedAt || item.createdAt || '') || Number.MAX_SAFE_INTEGER
+          list.sort((a, b) => stamp(a) - stamp(b))
         }
         return list
       })()
@@ -878,6 +900,14 @@ window.__ModuleLoader__.load({
               : h(
                   'span',
                   { style: { display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 } },
+                  isNewScript(entry)
+                    ? h('span', {
+                        title: entry.seenAt
+                          ? `新录入脚本：已于 ${new Date(entry.seenAt).toLocaleString('zh-CN')} 点击，24 小时后自动摘掉 NEW`
+                          : '新录入脚本：点击一次后 24 小时自动摘掉 NEW',
+                        style: { flex: 'none', fontSize: '10px', fontWeight: 700, letterSpacing: '0.4px', color: '#10131a', background: '#3fb950', borderRadius: '4px', padding: '0 4px', lineHeight: '15px' },
+                      }, 'NEW')
+                    : null,
                   h('span', { style: { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 } },
                     entry.title || entry.name.replace(/\.[^.]+$/, ''),
                     entry.title ? null : h('span', { style: { ...styles.sub, marginLeft: '6px' } }, '未命名'),
@@ -1454,6 +1484,16 @@ window.__ModuleLoader__.load({
             h('option', { value: 'doc' }, '排序：文档状态'),
             h('option', { value: 'recent' }, '排序：最近启动'),
             h('option', { value: 'created' }, '排序：首次归档'),
+            h('option', { value: 'fileCreated' }, '排序：创建时间（新→旧）'),
+            h('option', { value: 'fileCreatedAsc' }, '排序：创建时间（旧→新）'),
+          ),
+          h(
+            'select',
+            { style: { ...styles.input, minWidth: '104px' }, value: createdWithin, onChange: (event) => setCreatedWithin(event.target.value), title: '按脚本文件创建时间筛选' },
+            h('option', { value: '' }, '创建：全部'),
+            h('option', { value: '1d' }, '创建：今天'),
+            h('option', { value: '7d' }, '创建：7 天内'),
+            h('option', { value: '30d' }, '创建：30 天内'),
           ),
 
         ),
