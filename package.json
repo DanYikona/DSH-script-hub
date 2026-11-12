@@ -1,0 +1,52 @@
+{
+  "name": "dsh-script-hub",
+  "version": "0.2.1",
+  "description": "DSH script hub: archives scripts written in any session into D:\\DSH代码插件, auto-generates a doc per script, and exposes a web GUI panel to inspect, start, stop and read logs. by dan yikona",
+  "type": "module",
+  "main": "index.js",
+  "icon": "icon.svg",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./icon": "./icon.svg",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "engines": {
+      "dsh": ">=0.2.1-rc.3"
+    },
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-renderer",
+        "@deepseek-ai/dsh-client-ui-layout"
+      ],
+      "platform": "web"
+    }
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "cordis.patch.yml",
+    "icon.svg",
+    "README.md"
+  ],
+  "peerDependencies": {
+    "@deepseek-ai/dsh": ">=0.2.1-rc.3",
+    "react": "^18.2.0"
+  },
+  "license": "MIT",
+  "author": "dan yikona <dansensei2024@outlook.com>",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "script-hub",
+    "launcher",
+    "process-manager",
+    "windows",
+    "tauri-alternative"
+  ]
+}

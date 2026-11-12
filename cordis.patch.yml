@@ -1,0 +1,12 @@
+# bundle patch for the script-hub plugin: inserts its plugin row into the web profile roster.
+# Author: dan yikona <dansensei2024@outlook.com> · MIT · 可自行修改
+- insert:
+    - id: script-hub
+      name: dsh-script-hub
+      config:
+        root: 'D:\DSH代码插件'
+        watchDirs:
+          - 'E:\Administrator\Documents\deepseek-harness\default-workspace'
+        autoArchive: true
+        # 裸名 python 会自动改用同目录的 pythonw.exe（无控制台窗口）；填绝对路径则原样使用
+        pythonPath: 'python'
