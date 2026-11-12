@@ -166,8 +166,10 @@ window.__ModuleLoader__.load({
         border: '1px solid var(--dsw-alias-border-l1)',
         borderRadius: '12px',
         overflow: 'hidden',
-        minHeight: 0,
-        flex: '0 0 auto',
+        display: 'flex',
+        flexDirection: 'column',
+        minHeight: '160px',
+        flex: '1 1 auto',
         background: 'color-mix(in srgb, var(--dsw-alias-bg-base, #16171b) 88%, transparent)',
       },
       row: {
@@ -201,13 +203,13 @@ window.__ModuleLoader__.load({
       },
       dot: { display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', marginRight: '6px' },
       detail: {
-        flex: 'none',
+        flex: '0 0 auto',
         border: '1px solid var(--dsw-alias-border-l1)',
         borderRadius: '10px',
         display: 'flex',
         flexDirection: 'column',
-        minHeight: '220px',
-        maxHeight: '38%',
+        height: 'clamp(150px, 34vh, 320px)',
+        minHeight: '120px',
         overflow: 'hidden',
       },
       tabs: { display: 'flex', gap: '2px', borderBottom: '1px solid var(--dsw-alias-border-l1)', flex: 'none' },
@@ -217,7 +219,8 @@ window.__ModuleLoader__.load({
         margin: 0,
         padding: '10px 12px',
         overflow: 'auto',
-        flex: 1,
+        flex: '1 1 auto',
+        minHeight: 0,
         fontSize: '12px',
         lineHeight: 1.5,
         fontFamily: 'var(--ds-font-family-code)',
@@ -227,7 +230,9 @@ window.__ModuleLoader__.load({
       },
       textarea: {
         margin: '10px 12px',
-        flex: 1,
+        flex: '1 1 auto',
+        minHeight: 0,
+        overflow: 'auto',
         resize: 'none',
         background: 'var(--dsw-specific-input-major)',
         border: '1px solid var(--dsw-alias-border-l2)',
@@ -324,6 +329,8 @@ window.__ModuleLoader__.load({
       const [hideHidden, setHideHidden] = React.useState(true)
       const [collapseSame, setCollapseSame] = React.useState(false)
       const [scrollTop, setScrollTop] = React.useState(0)
+      const [listH, setListH] = React.useState(420)
+      const listRef = React.useRef(null)
       const [category, setCategory] = React.useState('')
       const [sessionFilter, setSessionFilter] = React.useState('')
       const [statusFilter, setStatusFilter] = React.useState('')
@@ -374,6 +381,10 @@ window.__ModuleLoader__.load({
       const [impState, setImpState] = React.useState({ active: false, done: 0, total: 0, missing: 0, sessionId: '', error: '' })
       const [impMsg, setImpMsg] = React.useState('')
       const [picked, setPicked] = React.useState(() => new Set())
+      const [bulkMenu, setBulkMenu] = React.useState(false)
+      const [bulkBusy, setBulkBusy] = React.useState('')
+      const [bulkMsg, setBulkMsg] = React.useState('')
+      const [bulkConfirmDel, setBulkConfirmDel] = React.useState(false)
       const [sortBy, setSortBy] = React.useState('default')
       const [docFilter, setDocFilter] = React.useState('')
       const [showGenerated, setShowGenerated] = React.useState(false)
@@ -402,6 +413,24 @@ window.__ModuleLoader__.load({
         const timer = setInterval(() => void refresh(), 10000)
         return () => clearInterval(timer)
       }, [refresh])
+
+      // 列表可视高度随窗口/容器变化，虚拟滚动窗口据此重算
+      React.useEffect(() => {
+        const node = listRef.current
+        if (!node || typeof ResizeObserver === 'undefined') return undefined
+        const apply = () => {
+          const next = Math.max(120, Math.round(node.clientHeight || 0) || 420)
+          setListH((prev) => (Math.abs(prev - next) > 4 ? next : prev))
+        }
+        apply()
+        const observer = new ResizeObserver(apply)
+        observer.observe(node)
+        window.addEventListener('resize', apply)
+        return () => {
+          observer.disconnect()
+          window.removeEventListener('resize', apply)
+        }
+      }, [state.entries.length])
 
       const entries = state.entries
       const categories = Object.keys(state.counts).sort()
@@ -572,6 +601,103 @@ window.__ModuleLoader__.load({
         }
       }
 
+      const bulkList = () => entries.filter((entry) => picked.has(entry.id))
+
+      const runBulk = async (kind) => {
+        setBulkMenu(false)
+        const targets = bulkList()
+        if (targets.length === 0) {
+          setNotice('先在左侧勾选框里选中脚本')
+          return
+        }
+        if (kind === 'delete') {
+          setBulkConfirmDel(true)
+          return
+        }
+        const label = { start: '批量启动', stop: '批量停止', hide: '批量隐藏', unhide: '批量取消隐藏', copy: '批量复制路径', ai: '批量补文档', importance: '批量检测重要性' }[kind] ?? '批量操作'
+        setBulkBusy(kind)
+        setBulkMsg('')
+        setNotice('')
+        let ok = 0
+        let fail = 0
+        try {
+          if (kind === 'start' || kind === 'stop') {
+            for (const entry of targets) {
+              try {
+                await call(kind === 'start' ? API.start : API.stop, { method: 'POST', body: { id: entry.id } })
+                ok += 1
+              } catch (error) {
+                fail += 1
+              }
+              setBulkMsg(`${label}：${ok + fail}/${targets.length}`)
+            }
+          } else if (kind === 'hide' || kind === 'unhide') {
+            for (const entry of targets) {
+              try {
+                await call(API.hide, { method: 'POST', body: { id: entry.id, hidden: kind === 'hide' } })
+                ok += 1
+              } catch (error) {
+                fail += 1
+              }
+              setBulkMsg(`${label}：${ok + fail}/${targets.length}`)
+            }
+          } else if (kind === 'copy') {
+            const text = targets.map((entry) => entry.filePath).join('\n')
+            try {
+              await navigator.clipboard.writeText(text)
+              ok = targets.length
+            } catch (clipError) {
+              setBulkMsg('剪贴板不可用，路径如下：')
+              setNotice(text)
+              ok = 0
+            }
+          } else if (kind === 'ai') {
+            await call(API.aiStart, { method: 'POST', body: { ids: targets.map((entry) => entry.id) } })
+            ok = targets.length
+          } else if (kind === 'importance') {
+            await call(API.importanceRun, { method: 'POST', body: { ids: targets.map((entry) => entry.id) } })
+            ok = targets.length
+          }
+          setBulkMsg(`${label}：成功 ${ok}${fail > 0 ? `，失败 ${fail}` : ''}`)
+          if (kind === 'ai') setNotice('已提交文档补全，进度见上方横幅')
+          if (kind === 'importance') setNotice('已提交重要性检测，进度见上方横幅')
+          await refresh()
+        } catch (error) {
+          setBulkMsg(`${label}失败：${error.message || error}`)
+        } finally {
+          setBulkBusy('')
+        }
+      }
+
+      const doBulkRemove = async () => {
+        const targets = bulkList()
+        if (targets.length === 0) {
+          setBulkConfirmDel(false)
+          return
+        }
+        setBulkBusy('delete')
+        setBulkMsg('')
+        let ok = 0
+        let fail = 0
+        const removed = new Set(picked)
+        for (const entry of targets) {
+          try {
+            await call(API.remove, { method: 'POST', body: { id: entry.id } })
+            ok += 1
+            removed.delete(entry.id)
+            if (selected === entry.id) setSelected('')
+          } catch (error) {
+            fail += 1
+          }
+          setBulkMsg(`批量删除：${ok + fail}/${targets.length}`)
+        }
+        setPicked(removed)
+        setBulkConfirmDel(false)
+        setBulkBusy('')
+        setBulkMsg(`批量删除：成功 ${ok}${fail > 0 ? `，失败 ${fail}` : ''}`)
+        await refresh()
+      }
+
       const saveDoc = async () => {
         if (!current) return
         setBusy(`${current.id}:save`)
@@ -695,9 +821,8 @@ window.__ModuleLoader__.load({
         return list
       })()
       const ROW_H = 38
-      const VIEW_H = 420
       const startIdx = Math.max(0, Math.floor(scrollTop / ROW_H) - 6)
-      const endIdx = Math.min(sortedVisible.length, Math.ceil((scrollTop + VIEW_H) / ROW_H) + 6)
+      const endIdx = Math.min(sortedVisible.length, Math.ceil((scrollTop + listH) / ROW_H) + 6)
       const windowed = sortedVisible.slice(startIdx, endIdx)
       const rows = windowed.map((entry, idx) => {
         const menuUp = idx > windowed.length / 2
@@ -1102,6 +1227,60 @@ window.__ModuleLoader__.load({
             title: '插件新建后台会话，读取脚本与所属会话上下文判定 high/medium/low（消耗 token）',
             onClick: () => { if (!impState.active && impTargets > 0) setImpConfirm(true) },
           }, impState.active ? `检测中 ${impState.done}/${impState.total}` : (picked.size > 0 ? `检测选中 (${picked.size})` : (missingImportance > 0 ? `检测重要性 (${missingImportance})` : '重要性已全'))),
+          h(
+            'div',
+            { style: { position: 'relative' } },
+            h('button', {
+              style: picked.size > 0
+                ? { ...styles.button, borderColor: '#3fb950', color: '#3fb950' }
+                : { ...styles.button, opacity: 0.55 },
+              title: '对左侧勾选的脚本批量执行：启动 / 停止 / 补文档 / 检测重要性 / 隐藏 / 复制路径 / 删除',
+              disabled: bulkBusy !== '',
+              onClick: () => setBulkMenu((prev) => !prev),
+            }, bulkBusy !== '' ? '操作中…' : (picked.size > 0 ? `操作 (${picked.size}) ▾` : '操作 ▾')),
+            bulkMenu
+              ? h(
+                  'div',
+                  {
+                    style: {
+                      position: 'absolute',
+                      right: 0,
+                      top: 'calc(100% + 4px)',
+                      zIndex: 20,
+                      minWidth: '188px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      padding: '4px 0',
+                      border: '1px solid var(--dsw-alias-border-l2)',
+                      borderRadius: '10px',
+                      background: '#12141a',
+                      boxShadow: '0 10px 26px rgba(0,0,0,0.45)',
+                    },
+                  },
+                  h('div', { style: { padding: '4px 12px 6px', fontSize: '11.5px', color: 'var(--dsw-alias-label-tertiary)' } },
+                    picked.size > 0 ? `已选 ${picked.size} 个脚本` : '先勾选脚本再选择操作'),
+                  ...[
+                    ['start', '启动选中'],
+                    ['stop', '停止选中'],
+                    ['ai', 'AI 补全文档'],
+                    ['importance', '检测重要性'],
+                    ['hide', '隐藏选中'],
+                    ['unhide', '取消隐藏'],
+                    ['copy', '复制路径'],
+                  ].map(([kind, text]) => h('button', {
+                    style: { background: 'transparent', border: 'none', textAlign: 'left', padding: '6px 12px', color: 'var(--dsw-alias-label-primary)', fontSize: '12.5px', cursor: picked.size > 0 ? 'pointer' : 'default', opacity: picked.size > 0 ? 1 : 0.5 },
+                    disabled: picked.size === 0,
+                    onClick: () => void runBulk(kind),
+                  }, text)),
+                  h('div', { style: { height: '1px', background: 'var(--dsw-alias-border-l1)', margin: '4px 0' } }),
+                  h('button', {
+                    style: { background: 'transparent', border: 'none', textAlign: 'left', padding: '6px 12px', color: '#e5534b', fontSize: '12.5px', cursor: picked.size > 0 ? 'pointer' : 'default', opacity: picked.size > 0 ? 1 : 0.5 },
+                    disabled: picked.size === 0,
+                    onClick: () => void runBulk('delete'),
+                  }, '删除选中'),
+                )
+              : null,
+          ),
           h('button', {
             style: { ...styles.button, borderColor: '#7aa2f7' },
             title: '按「作用短语 + 版本号」重算显示名（版本按脚本生成来源排序，不改文件名，手动改过名的条目保持不动）',
@@ -1464,13 +1643,25 @@ window.__ModuleLoader__.load({
           : null,
         impMsg !== '' ? h('div', { style: { ...styles.banner, margin: '0 0 8px' } }, impMsg) : null,
         notice !== '' ? h('div', { style: styles.banner }, notice) : null,
+        bulkConfirmDel
+          ? h('div', { style: { ...styles.banner, borderColor: '#e5534b', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '8px' } },
+            h('span', { style: { flex: '1 1 100%', lineHeight: '1.6' } }, `将删除选中的 ${picked.size} 个脚本：归档文件、同名 .md 与索引记录都会删掉（日志保留），不可恢复。继续？`),
+            h('button', { style: styles.danger, disabled: bulkBusy === 'delete', onClick: () => void doBulkRemove() }, bulkBusy === 'delete' ? '删除中…' : '确认删除'),
+            h('button', { style: styles.button, onClick: () => setBulkConfirmDel(false) }, '取消'),
+          )
+          : null,
+        bulkMsg !== '' ? h('div', { style: { ...styles.banner, borderColor: '#3fb950' } }, bulkMsg) : null,
+        bulkMenu
+          ? h('div', { style: { position: 'fixed', inset: 0, zIndex: 18 }, onClick: () => setBulkMenu(false) })
+          : null,
         h(
           'div',
           { style: styles.table },
           h(
             'div',
             {
-              style: { maxHeight: `${VIEW_H}px`, overflowY: 'auto', position: 'relative' },
+              ref: listRef,
+              style: { flex: '1 1 auto', minHeight: 0, overflowY: 'auto', position: 'relative' },
               onScroll: (event) => setScrollTop(event.currentTarget.scrollTop),
             },
             headerRow,

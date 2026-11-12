@@ -7,7 +7,7 @@
 
 ## 0. 先确认包里有什么
 
-`dsh-script-hub-0.2.1.zip` 解压后是 6 个文件，平铺在根目录：
+`dsh-script-hub-0.2.2.zip` 解压后是 6 个文件，平铺在根目录：
 
 ```
 index.js            host 侧（路由 / 工具 / 归档 / 运行 / AI）
@@ -40,7 +40,7 @@ node_modules/
 cd /d/DeepSeek/script-hub          # 换成你放插件源码的目录
 git init -b main
 git add index.js client.js cordis.patch.yml package.json icon.svg README.md UPLOAD-GUIDE.md .gitignore
-git commit -m "feat: dsh-script-hub 0.2.1 — 脚本归档 / 运行 / 文档 [dan yikona]"
+git commit -m "feat: dsh-script-hub 0.2.2 — 脚本归档 / 运行 / 文档 [dan yikona]"
 ```
 
 ### 1.2 建远程仓库并推送
@@ -60,14 +60,14 @@ git push -u origin main
 市场与用户都能从 Release 直接下 zip：
 
 ```bash
-git tag -a v0.2.1 -m "dsh-script-hub 0.2.1 by dan yikona"
-git push origin v0.2.1
+git tag -a v0.2.2 -m "dsh-script-hub 0.2.2 by dan yikona"
+git push origin v0.2.2
 ```
 
-然后在仓库页面 **Releases → Draft a new release**，选 `v0.2.1`，标题写 `0.2.1`，正文可用下面这段，附件拖入 `dsh-script-hub-0.2.1.zip`：
+然后在仓库页面 **Releases → Draft a new release**，选 `v0.2.2`，标题写 `0.2.2`，正文可用下面这段，附件拖入 `dsh-script-hub-0.2.2.zip`：
 
 ```markdown
-## 0.2.1 — dan yikona
+## 0.2.2 — dan yikona
 
 - 新增：一键检测重要性（多选 / 分批 20 条自动续跑）
 - 新增：文档质量判定（骨架 / 空壳文档会被识别并排队补全）
@@ -77,6 +77,8 @@ git push origin v0.2.1
 - 新增：同名启动壳合并、虚拟滚动
 - 优化：/list 首次 15.5s → 0.14s，稳态 10ms；面板只渲染可视行
 - 修复：PowerShell 5.1 读无 BOM 的 UTF-8 脚本会吞掉下一行
+- 0.2.2：新增顶部「操作 ▾」批量入口（启动 / 停止 / 补文档 / 检测重要性 / 隐藏 / 复制路径 / 删除选中）
+- 0.2.2：修复窗口缩小后文档/日志预览区被裁掉（表格 `flex:1` 自适应 + `ResizeObserver`，详情区 `clamp(150px,34vh,320px)`）
 ```
 
 ### 1.4 仓库要放的文件清单
@@ -158,8 +160,8 @@ npm publish --access public
 - [ ] `package.json`：`name` / `version` / `author` / `license` 正确，`dsh.engines.dsh` 写了
 - [ ] 仓库里没有 `index.json`、`logs/`、本机绝对路径
 - [ ] README 顶部保留「⚠️ 权限声明」，作者签名 `dan yikona` 与邮箱在
-- [ ] 打了 `v0.2.1` tag，Release 附了 zip
-- [ ] npm 发布成功（`npm view <包名> version` 能看到 0.2.1）
+- [ ] 打了 `v0.2.2` tag，Release 附了 zip
+- [ ] npm 发布成功（`npm view <包名> version` 能看到 0.2.2）
 - [ ] 向 `awesome-dsh-plugin` 提了 PR，描述里写清了「会跑脚本」这条权限
 - [ ] 自己在干净机器上装一遍，确认侧边栏 → 脚本中心 → 手动归档/启动/日志都通
 
