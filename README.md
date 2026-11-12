@@ -51,6 +51,19 @@ DeepSeek Harness（DSH）插件。把任意会话里写出的脚本自动归档�
 
 ## 2. 安装与启用
 
+### 2.0 从仓库安装（最快）
+
+```bash
+git clone https://github.com/DanYikona/DSH-script-hub.git
+```
+
+把克隆下来的目录整个复制到当前 profile 的 `node_modules` 下（例如 `C:\Users\<你>\.dsh\profiles\desktop\node_modules\dsh-script-hub`），然后在同目录的 `cordis.patch.yml` 里按下面「`cordis.patch.yml`」一节插入本插件行，重启 DSH 即可在侧边栏看到「脚本中心」。
+
+> 也可以 `pnpm add <本机绝对路径>/DSH-script-hub`，效果一样。
+> 本机开发时更省事的做法是建一个目录联接：`mklink /J <profile>\node_modules\dsh-script-hub E:\DSH-script-hub-0.2.1`。
+
+### 2.1 目录结构
+
 插件通过 DSH 的 profile 加载，目录结构：
 
 ```

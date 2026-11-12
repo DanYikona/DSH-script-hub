@@ -2,6 +2,14 @@
   "name": "dsh-script-hub",
   "version": "0.2.1",
   "description": "DSH script hub: archives scripts written in any session into D:\\DSH代码插件, auto-generates a doc per script, and exposes a web GUI panel to inspect, start, stop and read logs. by dan yikona",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/DanYikona/DSH-script-hub.git"
+  },
+  "homepage": "https://github.com/DanYikona/DSH-script-hub#readme",
+  "bugs": {
+    "url": "https://github.com/DanYikona/DSH-script-hub/issues"
+  },
   "type": "module",
   "main": "index.js",
   "icon": "icon.svg",
